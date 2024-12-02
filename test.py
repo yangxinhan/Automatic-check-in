@@ -92,11 +92,21 @@ class FaceRecognitionSystem:
     
     def run(self):
         try:
+            # 設定攝影機
             video_capture = cv2.VideoCapture(2)
             if not video_capture.isOpened():
                 raise Exception("無法開啟攝影機")
             
+            # 降低攝影機解析度
+            video_capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            video_capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            # 設定FPS
+            video_capture.set(cv2.CAP_PROP_FPS, 15)
+            
             print("系統啟動中...")
+            
+            # 用於控制人臉偵測頻率的計數器
+            frame_count = 0
             
             while True:
                 ret, frame = video_capture.read()
@@ -105,36 +115,48 @@ class FaceRecognitionSystem:
                     time.sleep(1)
                     continue
                 
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                faces = self.face_detector(rgb_frame)
+                # 縮小影像尺寸加快處理速度
+                small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
+                rgb_small_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
                 
-                for face in faces:
-                    shape = self.shape_predictor(rgb_frame, face)
-                    face_descriptor = np.array(face_recognition.face_encodings(rgb_frame)[0])
+                # 每3幀才進行一次人臉偵測
+                if frame_count % 3 == 0:
+                    faces = self.face_detector(rgb_small_frame)
                     
-                    matches = []
-                    for known_encoding in self.known_face_encodings:
-                        match = face_recognition.compare_faces([known_encoding], face_descriptor)[0]
-                        matches.append(match)
-                    
-                    name = "未知"
-                    if True in matches:
-                        first_match_index = matches.index(True)
-                        name = self.known_face_names[first_match_index]
-                        self.mark_attendance(name)
-                    
-                    left = face.left()
-                    top = face.top()
-                    right = face.right()
-                    bottom = face.bottom()
-                    
-                    cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
-                    cv2.putText(frame, name, (left, bottom + 30), 
-                              cv2.FONT_HERSHEY_DUPLEX, 0.7, (0, 255, 0), 1)
+                    for face in faces:
+                        # 根據縮小後的影像計算人臉位置
+                        shape = self.shape_predictor(rgb_small_frame, face)
+                        try:
+                            face_descriptor = np.array(face_recognition.face_encodings(rgb_small_frame)[0])
+                            
+                            matches = []
+                            for known_encoding in self.known_face_encodings:
+                                match = face_recognition.compare_faces([known_encoding], face_descriptor)[0]
+                                matches.append(match)
+                            
+                            name = "未知"
+                            if True in matches:
+                                first_match_index = matches.index(True)
+                                name = self.known_face_names[first_match_index]
+                                self.mark_attendance(name)
+                            
+                            # 將座標轉換回原始影像大小
+                            left = face.left() * 2
+                            top = face.top() * 2
+                            right = face.right() * 2
+                            bottom = face.bottom() * 2
+                            
+                            cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+                            cv2.putText(frame, name, (left, bottom + 30), 
+                                      cv2.FONT_HERSHEY_DUPLEX, 0.7, (0, 255, 0), 1)
+                        except IndexError:
+                            continue
                 
+                frame_count += 1
                 cv2.imshow('人臉辨識簽到系統', frame)
                 
-                if cv2.waitKey(1) & 0xFF == ord('q'):
+                # 增加延遲降低CPU使用率
+                if cv2.waitKey(30) & 0xFF == ord('q'):
                     break
             
             video_capture.release()
