@@ -14,7 +14,8 @@ class FaceRecognitionSystem:
         self.known_face_encodings = []
         self.known_face_names = []
         self.attendance_file = "attendance.csv"
-        self.last_attendance = {}
+        self.last_attendance = {}  # 記錄最後簽到/簽退時間
+        self.present_people = {}   # 追踪目前在場人員
         self.face_detector = dlib.get_frontal_face_detector()
         
         # 檢查並下載特徵點模型
@@ -24,10 +25,11 @@ class FaceRecognitionSystem:
         
         self.shape_predictor = dlib.shape_predictor(self.shape_predictor_path)
         
+        # 建立或檢查CSV檔案
         if not os.path.exists(self.attendance_file):
             with open(self.attendance_file, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                writer.writerow(['Name', 'Time'])
+                writer.writerow(['Name', 'Check_In_Time', 'Check_Out_Time', 'Status'])
     
     def download_shape_predictor(self):
         """下載並解壓縮特徵點模型"""
@@ -76,19 +78,37 @@ class FaceRecognitionSystem:
 
     def mark_attendance(self, name):
         current_time = time.time()
-        if name in self.last_attendance and current_time - self.last_attendance[name] < 60:
-            return
         
-        self.last_attendance[name] = current_time
+        # 檢查是否在短時間內重複偵測
+        if name in self.last_attendance:
+            if current_time - self.last_attendance[name] < 30:  # 30秒內不重複記錄
+                return
+        
+        now = datetime.now()
+        time_string = now.strftime('%Y-%m-%d %H:%M:%S')
+        
         try:
-            now = datetime.now()
-            time_string = now.strftime('%Y-%m-%d %H:%M:%S')
-            with open(self.attendance_file, 'a', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-                writer.writerow([name, time_string])
+            # 檢查是否已在場內
+            if name in self.present_people:
+                # 執行簽退
+                check_in_time = self.present_people[name]
+                with open(self.attendance_file, 'a', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([name, check_in_time, time_string, "簽退"])
+                del self.present_people[name]
+                print(f"{name} 簽退成功: {time_string}")
+            else:
+                # 執行簽到
+                self.present_people[name] = time_string
+                with open(self.attendance_file, 'a', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([name, time_string, "", "簽到"])
                 print(f"{name} 簽到成功: {time_string}")
+            
+            self.last_attendance[name] = current_time
+            
         except Exception as e:
-            print(f"記錄簽到時發生錯誤: {str(e)}")
+            print(f"記錄考勤時發生錯誤: {str(e)}")
     
     def run(self):
         try:
