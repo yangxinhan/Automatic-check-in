@@ -1,7 +1,7 @@
 class AttendanceSystem {
     constructor() {
         this.records = [];
-        this.autoRefreshInterval = 30000; // 30秒更新一次
+        this.autoRefreshInterval = 1000; // 1秒更新一次
         this.initializeSystem();
     }
 
