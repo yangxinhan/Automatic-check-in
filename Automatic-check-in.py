@@ -113,7 +113,7 @@ class FaceRecognitionSystem:
     def run(self):
         try:
             # 設定攝影機
-            video_capture = cv2.VideoCapture(2)
+            video_capture = cv2.VideoCapture(0)
             if not video_capture.isOpened():
                 raise Exception("無法開啟攝影機")
             
