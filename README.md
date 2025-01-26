@@ -24,15 +24,12 @@
 ### 前端技術
 
 - HTML5/CSS3/JavaScript
-- Bootstrap 響應式設計
-- Vue.js/React 前端框架
 
 ### 後端技術
 
 - Python 3.9+
 - OpenCV 人臉偵測
 - face_recognition 人臉識別
-- Flask/Django Web框架
 - SQLite/MySQL 資料庫
 
 ### 硬體需求
@@ -60,13 +57,8 @@
 pip install -r requirements.txt
 ```
 
-2. 下載面部特徵點模型：
-```bash
-curl -L "http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2" -o shape_predictor_68_face_landmarks.dat.bz2
-bunzip2 shape_predictor_68_face_landmarks.dat.bz2
-```
 
-3. 建立必要資料夾：
+2. 建立必要資料夾：
 ```
 mkdir known_faces
 mkdir logs
