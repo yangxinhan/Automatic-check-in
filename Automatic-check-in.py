@@ -1,80 +1,36 @@
 import cv2
-import face_recognition
+import face_recognition  # 添加這行
 import numpy as np
 from datetime import datetime 
 import csv
 import os
 import time
 import dlib
-import urllib.request
-import bz2
+import pickle
 
 class FaceRecognitionSystem:
     def __init__(self):
-        self.known_face_encodings = []
-        self.known_face_names = []
         self.attendance_file = "attendance.csv"
-        self.last_attendance = {}  # 記錄最後簽到/簽退時間
-        self.present_people = {}   # 追踪目前在場人員
+        self.model_file = "face_model.pkl"
+        self.last_attendance = {}
+        self.present_people = {}
         self.face_detector = dlib.get_frontal_face_detector()
         
-        # 檢查並下載特徵點模型
-        self.shape_predictor_path = "shape_predictor_68_face_landmarks.dat"
-        if not os.path.exists(self.shape_predictor_path):
-            self.download_shape_predictor()
-        
-        self.shape_predictor = dlib.shape_predictor(self.shape_predictor_path)
+        # 載入訓練好的模型
+        if not os.path.exists(self.model_file):
+            raise Exception("找不到模型檔案，請先執行 train_model.py 訓練模型")
+            
+        with open(self.model_file, 'rb') as f:
+            model_data = pickle.load(f)
+            self.known_face_encodings = model_data['encodings']
+            self.known_face_names = model_data['names']
+            print(f"已載入 {len(self.known_face_names)} 個人臉模型")
         
         # 建立或檢查CSV檔案
         if not os.path.exists(self.attendance_file):
             with open(self.attendance_file, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 writer.writerow(['Name', 'Check_In_Time', 'Check_Out_Time', 'Status'])
-    
-    def download_shape_predictor(self):
-        """下載並解壓縮特徵點模型"""
-        print("下載特徵點模型中...")
-        url = "http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2"
-        compressed_path = self.shape_predictor_path + ".bz2"
-        
-        # 下載壓縮檔
-        urllib.request.urlretrieve(url, compressed_path)
-        
-        # 解壓縮檔案
-        print("解壓縮模型檔案...")
-        with bz2.open(compressed_path) as fr, open(self.shape_predictor_path, 'wb') as fw:
-            fw.write(fr.read())
-        
-        # 刪除壓縮檔
-        os.remove(compressed_path)
-        print("特徵點模型準備完成！")
-
-    def load_known_faces(self, faces_dir="known_faces"):
-        try:
-            if not os.path.exists(faces_dir):
-                os.makedirs(faces_dir)
-                print(f"已建立 {faces_dir} 資料夾")
-                return
-            
-            for filename in os.listdir(faces_dir):
-                if filename.endswith((".jpg", ".png")):
-                    image_path = os.path.join(faces_dir, filename)
-                    try:
-                        # 使用 dlib 直接處理影像
-                        image = cv2.imread(image_path)
-                        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                        faces = self.face_detector(rgb_image)
-                        
-                        if len(faces) > 0:
-                            shape = self.shape_predictor(rgb_image, faces[0])
-                            face_descriptor = np.array(face_recognition.face_encodings(rgb_image)[0])
-                            self.known_face_encodings.append(face_descriptor)
-                            self.known_face_names.append(os.path.splitext(filename)[0])
-                            print(f"成功載入 {filename}")
-                    except Exception as e:
-                        print(f"載入 {filename} 失敗: {str(e)}")
-        except Exception as e:
-            print(f"載入人臉資料時發生錯誤: {str(e)}")
 
     def mark_attendance(self, name):
         current_time = time.time()
@@ -109,23 +65,37 @@ class FaceRecognitionSystem:
             
         except Exception as e:
             print(f"記錄考勤時發生錯誤: {str(e)}")
-    
+
+    def recognize_face(self, face_encoding):
+        """比對人臉特徵"""
+        matches = []
+        distances = []
+        
+        for known_encoding in self.known_face_encodings:
+            # 計算特徵向量距離
+            distance = np.linalg.norm(known_encoding - face_encoding)
+            distances.append(distance)
+            # 設定閾值，距離小於0.6視為相同人臉
+            matches.append(distance < 0.6)
+        
+        if True in matches:
+            # 找出最匹配的人臉
+            best_match_idx = distances.index(min(distances))
+            return self.known_face_names[best_match_idx]
+        return None
+
     def run(self):
         try:
-            # 設定攝影機
-            video_capture = cv2.VideoCapture(0)
+            video_capture = cv2.VideoCapture(2)
             if not video_capture.isOpened():
                 raise Exception("無法開啟攝影機")
             
-            # 降低攝影機解析度
+            # 設定攝影機參數
             video_capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             video_capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            # 設定FPS
             video_capture.set(cv2.CAP_PROP_FPS, 15)
             
             print("系統啟動中...")
-            
-            # 用於控制人臉偵測頻率的計數器
             frame_count = 0
             
             while True:
@@ -135,32 +105,28 @@ class FaceRecognitionSystem:
                     time.sleep(1)
                     continue
                 
-                # 縮小影像尺寸加快處理速度
+                # 縮小影像加快處理速度
                 small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
                 rgb_small_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
                 
-                # 每3幀才進行一次人臉偵測
+                # 每3幀處理一次
                 if frame_count % 3 == 0:
-                    faces = self.face_detector(rgb_small_frame)
+                    # 偵測人臉
+                    face_locations = self.face_detector(rgb_small_frame)
                     
-                    for face in faces:
-                        # 根據縮小後的影像計算人臉位置
-                        shape = self.shape_predictor(rgb_small_frame, face)
+                    for face in face_locations:
                         try:
-                            face_descriptor = np.array(face_recognition.face_encodings(rgb_small_frame)[0])
+                            # 提取人臉特徵
+                            face_encoding = np.array(face_recognition.face_encodings(rgb_small_frame)[0])
                             
-                            matches = []
-                            for known_encoding in self.known_face_encodings:
-                                match = face_recognition.compare_faces([known_encoding], face_descriptor)[0]
-                                matches.append(match)
-                            
-                            name = "未知"
-                            if True in matches:
-                                first_match_index = matches.index(True)
-                                name = self.known_face_names[first_match_index]
+                            # 識別人臉
+                            name = self.recognize_face(face_encoding)
+                            if name:
                                 self.mark_attendance(name)
+                            else:
+                                name = "未知"
                             
-                            # 將座標轉換回原始影像大小
+                            # 繪製框框和名字
                             left = face.left() * 2
                             top = face.top() * 2
                             right = face.right() * 2
@@ -169,13 +135,13 @@ class FaceRecognitionSystem:
                             cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
                             cv2.putText(frame, name, (left, bottom + 30), 
                                       cv2.FONT_HERSHEY_DUPLEX, 0.7, (0, 255, 0), 1)
-                        except IndexError:
+                        except Exception as e:
+                            print(f"處理人臉時發生錯誤: {str(e)}")
                             continue
                 
                 frame_count += 1
                 cv2.imshow('人臉辨識簽到系統', frame)
                 
-                # 增加延遲降低CPU使用率
                 if cv2.waitKey(30) & 0xFF == ord('q'):
                     break
             
@@ -190,6 +156,9 @@ class FaceRecognitionSystem:
             cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    system = FaceRecognitionSystem()
-    system.load_known_faces()
-    system.run()
+    try:
+        system = FaceRecognitionSystem()
+        system.run()
+    except Exception as e:
+        print(f"程式執行失敗: {str(e)}")
+        print("請確認是否已執行 train_model.py 訓練模型")
