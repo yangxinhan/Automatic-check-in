@@ -15,6 +15,8 @@ class FaceRecognitionSystem:
         self.last_attendance = {}
         self.present_people = {}
         self.face_detector = dlib.get_frontal_face_detector()
+        self.headless_mode = True  # 添加無介面模式標記
+        print("系統執行於無介面模式")
         
         # 載入訓練好的模型
         if not os.path.exists(self.model_file):
@@ -86,7 +88,7 @@ class FaceRecognitionSystem:
 
     def run(self):
         try:
-            video_capture = cv2.VideoCapture(2)
+            video_capture = cv2.VideoCapture(0)  # 改為使用預設攝影機
             if not video_capture.isOpened():
                 raise Exception("無法開啟攝影機")
             
@@ -123,37 +125,30 @@ class FaceRecognitionSystem:
                             name = self.recognize_face(face_encoding)
                             if name:
                                 self.mark_attendance(name)
+                                print(f"偵測到: {name}")
                             else:
-                                name = "未知"
+                                print("偵測到未知人臉")
                             
-                            # 繪製框框和名字
-                            left = face.left() * 2
-                            top = face.top() * 2
-                            right = face.right() * 2
-                            bottom = face.bottom() * 2
-                            
-                            cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
-                            cv2.putText(frame, name, (left, bottom + 30), 
-                                      cv2.FONT_HERSHEY_DUPLEX, 0.7, (0, 255, 0), 1)
                         except Exception as e:
                             print(f"處理人臉時發生錯誤: {str(e)}")
                             continue
                 
                 frame_count += 1
-                cv2.imshow('人臉辨識簽到系統', frame)
                 
-                if cv2.waitKey(30) & 0xFF == ord('q'):
-                    break
+                # 改用鍵盤中斷而不是視窗關閉
+                try:
+                    if input() == 'q':
+                        break
+                except:
+                    pass
             
             video_capture.release()
-            cv2.destroyAllWindows()
             
         except Exception as e:
             print(f"系統執行時發生錯誤: {str(e)}")
         finally:
             if 'video_capture' in locals():
                 video_capture.release()
-            cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     try:
