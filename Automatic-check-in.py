@@ -1,7 +1,7 @@
 import cv2
-import face_recognition  # 添加這行
+import face_recognition
 import numpy as np
-from datetime import datetime 
+from datetime import datetime
 import csv
 import os
 import time
@@ -15,8 +15,8 @@ class FaceRecognitionSystem:
         self.last_attendance = {}
         self.present_people = {}
         self.face_detector = dlib.get_frontal_face_detector()
-        self.headless_mode = True  # 添加無介面模式標記
-        print("系統執行於無介面模式")
+        self.detected_faces = {}  # 用於記錄每個人臉的框框顯示時間
+        print("系統執行於有畫面模式")
         
         # 載入訓練好的模型
         if not os.path.exists(self.model_file):
@@ -88,7 +88,7 @@ class FaceRecognitionSystem:
 
     def run(self):
         try:
-            video_capture = cv2.VideoCapture(0)  # 改為使用預設攝影機
+            video_capture = cv2.VideoCapture(1)  # 改為使用預設攝影機
             if not video_capture.isOpened():
                 raise Exception("無法開啟攝影機")
             
@@ -113,7 +113,6 @@ class FaceRecognitionSystem:
                 
                 # 每3幀處理一次
                 if frame_count % 3 == 0:
-                    # 偵測人臉
                     face_locations = self.face_detector(rgb_small_frame)
                     
                     for face in face_locations:
@@ -127,28 +126,49 @@ class FaceRecognitionSystem:
                                 self.mark_attendance(name)
                                 print(f"偵測到: {name}")
                             else:
-                                print("偵測到未知人臉")
+                                name = "未知"
                             
+                            # 將座標轉換回原始影像大小
+                            left = face.left() * 2
+                            top = face.top() * 2
+                            right = face.right() * 2
+                            bottom = face.bottom() * 2
+                            
+                            # 紀錄框框顯示時間
+                            self.detected_faces[name] = time.time()
+                            
+                            # 繪製框框和名字
+                            cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+                            cv2.putText(frame, name, (left, bottom + 30), 
+                                        cv2.FONT_HERSHEY_DUPLEX, 0.7, (0, 255, 0), 1)
                         except Exception as e:
                             print(f"處理人臉時發生錯誤: {str(e)}")
                             continue
                 
+                # 繪製長亮的框框
+                current_time = time.time()
+                for name, timestamp in self.detected_faces.items():
+                    if current_time - timestamp < 5:  # 框框顯示5秒
+                        cv2.putText(frame, name, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                
                 frame_count += 1
                 
-                # 改用鍵盤中斷而不是視窗關閉
-                try:
-                    if input() == 'q':
-                        break
-                except:
-                    pass
+                # 顯示影像
+                cv2.imshow('人臉辨識簽到系統', frame)
+                
+                # 按 'q' 鍵退出
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
             
             video_capture.release()
+            cv2.destroyAllWindows()
             
         except Exception as e:
             print(f"系統執行時發生錯誤: {str(e)}")
         finally:
             if 'video_capture' in locals():
                 video_capture.release()
+            cv2.destroyAllWindows()
 
 if __name__ == "__main__":
     try:
